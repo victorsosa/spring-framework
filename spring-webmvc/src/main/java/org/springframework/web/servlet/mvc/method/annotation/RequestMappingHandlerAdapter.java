@@ -117,8 +117,8 @@ import org.springframework.web.util.WebUtils;
 public class RequestMappingHandlerAdapter extends AbstractHandlerMethodAdapter
 		implements BeanFactoryAware, InitializingBean {
 
-	private static final boolean completionStagePresent = ClassUtils.isPresent("java.util.concurrent.CompletionStage",
-			RequestMappingHandlerAdapter.class.getClassLoader());
+	private static final boolean completionStagePresent = ClassUtils.isPresent(
+			"java.util.concurrent.CompletionStage", RequestMappingHandlerAdapter.class.getClassLoader());
 
 
 	private List<HandlerMethodArgumentResolver> customArgumentResolvers;
@@ -449,13 +449,12 @@ public class RequestMappingHandlerAdapter extends AbstractHandlerMethodAdapter
 	 * <ul>
 	 * <li>-1: no generation of cache-related headers</li>
 	 * <li>0 (default value): "Cache-Control: no-store" will prevent caching</li>
-	 * <li>> 0: "Cache-Control: max-age=seconds" will ask to cache content; not advised when dealing
-	 * with session attributes</li>
+	 * <li>1 or higher: "Cache-Control: max-age=seconds" will ask to cache content;
+	 * not advised when dealing with session attributes</li>
 	 * </ul>
 	 * <p>In contrast to the "cacheSeconds" property which will apply to all general
 	 * handlers (but not to {@code @SessionAttributes} annotated handlers),
 	 * this setting will apply to {@code @SessionAttributes} handlers only.
-	 *
 	 * @see #setCacheSeconds
 	 * @see org.springframework.web.bind.annotation.SessionAttributes
 	 */
@@ -726,7 +725,7 @@ public class RequestMappingHandlerAdapter extends AbstractHandlerMethodAdapter
 	protected ModelAndView handleInternal(HttpServletRequest request,
 			HttpServletResponse response, HandlerMethod handlerMethod) throws Exception {
 
-		ModelAndView mav = null;
+		ModelAndView mav;
 		checkRequest(request);
 
 		// Execute invokeHandlerMethod in synchronized block if required.
@@ -738,15 +737,23 @@ public class RequestMappingHandlerAdapter extends AbstractHandlerMethodAdapter
 					mav = invokeHandlerMethod(request, response, handlerMethod);
 				}
 			}
-		}
-
-		mav = invokeHandlerMethod(request, response, handlerMethod);
-
-		if (getSessionAttributesHandler(handlerMethod).hasSessionAttributes()) {
-			applyCacheSeconds(response, this.cacheSecondsForSessionAttributeHandlers);
+			else {
+				// No HttpSession available -> no mutex necessary
+				mav = invokeHandlerMethod(request, response, handlerMethod);
+			}
 		}
 		else {
-			prepareResponse(response);
+			// No synchronization on session demanded at all...
+			mav = invokeHandlerMethod(request, response, handlerMethod);
+		}
+
+		if (!response.containsHeader(HEADER_CACHE_CONTROL)) {
+			if (getSessionAttributesHandler(handlerMethod).hasSessionAttributes()) {
+				applyCacheSeconds(response, this.cacheSecondsForSessionAttributeHandlers);
+			}
+			else {
+				prepareResponse(response);
+			}
 		}
 
 		return mav;
@@ -890,7 +897,7 @@ public class RequestMappingHandlerAdapter extends AbstractHandlerMethodAdapter
 		}
 		List<InvocableHandlerMethod> initBinderMethods = new ArrayList<InvocableHandlerMethod>();
 		// Global methods first
-		for (Entry<ControllerAdviceBean, Set<Method>> entry : this.initBinderAdviceCache .entrySet()) {
+		for (Entry<ControllerAdviceBean, Set<Method>> entry : this.initBinderAdviceCache.entrySet()) {
 			if (entry.getKey().isApplicableToBeanType(handlerType)) {
 				Object bean = entry.getKey().resolveBean();
 				for (Method method : entry.getValue()) {

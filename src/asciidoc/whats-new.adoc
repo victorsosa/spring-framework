@@ -630,10 +630,14 @@ public @interface MyTestConfig {
 === Core Container Improvements
 
 * It is no longer necessary to specify the `@Autowired` annotation if the target
-  bean only define one constructor.
+  bean only defines one constructor.
 * `@Configuration` classes support constructor injection.
 * Any SpEL expression used to specify the `condition` of an `@EventListener` can
   now refer to beans (i.e. `@beanName.method()`).
+* _Composed annotations_ can now override array attributes in meta-annotations
+  with a single element of the component type of the array. For example, the
+  `String[] path` attribute of `@RequestMapping` can be overridden with
+  `String path` in a composed annotation.
 
 === Data Access Improvements
 
@@ -662,11 +666,16 @@ Spring 4.3 also improves the caching abstraction as follows:
 === Web Improvements
 
 * Built-in support for <<mvc-ann-requestmapping-head-options,HTTP HEAD and HTTP OPTIONS>>.
+* New `@GetMapping`, `@PostMapping`, `@PutMapping`, `@DeleteMapping`, and `@PatchMapping`
+  _composed annotations_ for `@RequestMapping`.
+* New `@RequestScope`, `@SessionScope`, and `@ApplicationScope` _composed annotations_ for web scopes.
 * New `@RestControllerAdvice` annotation with combined `@ControllerAdvice` with `@ResponseBody` semantics.
-* `@ResponseStatus` supported on the class level and inherited on all methods.
+* `@ResponseStatus` is now supported at the class level and inherited by all methods.
 * New `@SessionAttribute` annotation for access to session attributes (see <<mvc-ann-sessionattrib-global, example>>).
-* New `@RequestAttribute` annotation for access to session attributes (see <<mvc-ann-requestattrib, example>>).
+* New `@RequestAttribute` annotation for access to request attributes (see <<mvc-ann-requestattrib, example>>).
 * `@ModelAttribute` allows preventing data binding via `binding=false` attribute (see <<mvc-ann-modelattrib-method-args, reference>>).
+* Static resource handling uses the configured `ContentNegotiationManager` for media type determination.
+* `RestTemplate` and `AsyncRestTemplate` support strict URI variable encoding via `DefaultUriTemplateHandler`.
 * `AsyncRestTemplate` supports request interception.
 
 === WebSocket Messaging Improvements
@@ -676,6 +685,13 @@ Spring 4.3 also improves the caching abstraction as follows:
 === Testing Improvements
 
 * The JUnit support in the _Spring TestContext Framework_ now requires JUnit 4.12 or higher.
+* New `SpringRunner` __alias__ for the `SpringJUnit4ClassRunner`.
+* An empty declaration of `@ContextConfiguration` can now be completely omitted if default
+  XML files, Groovy scripts, or `@Configuration` classes are detected.
+* `@BeforeTransaction` and `@AfterTransaction` methods are no longer required to be `public`.
 * Server-side Spring MVC Test supports expectations on response headers with multiple values.
 * Server-side Spring MVC Test parses form data request content and populates request parameters.
-* Client-side Spring MVC Test supports expectations for form data in the request body.
+* Client-side REST test support allows indicating how many times a request is expected and
+  whether the order of declaration for expectations should be ignored (see <<spring-mvc-test-client>>).
+* Client-side REST Test supports expectations for form data in the request body.
+

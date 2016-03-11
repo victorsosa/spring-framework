@@ -79,7 +79,6 @@ import org.springframework.util.ReflectionUtils;
  * @see TestExecutionListeners
  * @see ContextConfiguration
  * @see ContextHierarchy
- * @see org.springframework.test.context.transaction.TransactionConfiguration
  */
 public class TestContextManager {
 
@@ -125,7 +124,7 @@ public class TestContextManager {
 	/**
 	 * Get the {@link TestContext} managed by this {@code TestContextManager}.
 	 */
-	protected final TestContext getTestContext() {
+	public final TestContext getTestContext() {
 		return this.testContext;
 	}
 

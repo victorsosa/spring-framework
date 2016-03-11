@@ -237,8 +237,12 @@ public class RestTemplate extends InterceptingHttpAccessor implements RestOperat
 	}
 
 	/**
-	 * Set a custom {@link UriTemplateHandler} for expanding URI templates.
-	 * <p>By default, RestTemplate uses {@link DefaultUriTemplateHandler}.
+	 * Configure the {@link UriTemplateHandler} to use to expand URI templates.
+	 * By default the {@link DefaultUriTemplateHandler} is used which relies on
+	 * Spring's URI template support and exposes several useful properties that
+	 * customize its behavior for encoding and for prepending a common base URL.
+	 * An alternative implementation may be used to plug an external URI
+	 * template library.
 	 * @param handler the URI template handler to use
 	 */
 	public void setUriTemplateHandler(UriTemplateHandler handler) {
@@ -782,11 +786,34 @@ public class RestTemplate extends InterceptingHttpAccessor implements RestOperat
 			}
 			else {
 				Object requestBody = this.requestEntity.getBody();
-				Class<?> requestType = requestBody.getClass();
+				Class<?> requestBodyClass = requestBody.getClass();
+				Type requestBodyType = (this.requestEntity instanceof RequestEntity ?
+						((RequestEntity<?>)this.requestEntity).getType() : requestBodyClass);
 				HttpHeaders requestHeaders = this.requestEntity.getHeaders();
 				MediaType requestContentType = requestHeaders.getContentType();
 				for (HttpMessageConverter<?> messageConverter : getMessageConverters()) {
-					if (messageConverter.canWrite(requestType, requestContentType)) {
+					if (messageConverter instanceof GenericHttpMessageConverter) {
+						GenericHttpMessageConverter<Object> genericMessageConverter = (GenericHttpMessageConverter<Object>) messageConverter;
+						if (genericMessageConverter.canWrite(requestBodyType, requestBodyClass, requestContentType)) {
+							if (!requestHeaders.isEmpty()) {
+								httpRequest.getHeaders().putAll(requestHeaders);
+							}
+							if (logger.isDebugEnabled()) {
+								if (requestContentType != null) {
+									logger.debug("Writing [" + requestBody + "] as \"" + requestContentType +
+											"\" using [" + messageConverter + "]");
+								}
+								else {
+									logger.debug("Writing [" + requestBody + "] using [" + messageConverter + "]");
+								}
+
+							}
+							genericMessageConverter.write(
+									requestBody, requestBodyType, requestContentType, httpRequest);
+							return;
+						}
+					}
+					else if (messageConverter.canWrite(requestBodyClass, requestContentType)) {
 						if (!requestHeaders.isEmpty()) {
 							httpRequest.getHeaders().putAll(requestHeaders);
 						}
@@ -806,7 +833,7 @@ public class RestTemplate extends InterceptingHttpAccessor implements RestOperat
 					}
 				}
 				String message = "Could not write request: no suitable HttpMessageConverter found for request type [" +
-						requestType.getName() + "]";
+						requestBodyClass.getName() + "]";
 				if (requestContentType != null) {
 					message += " and content type [" + requestContentType + "]";
 				}
