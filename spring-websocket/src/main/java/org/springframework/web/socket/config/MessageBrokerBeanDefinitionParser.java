@@ -573,6 +573,10 @@ class MessageBrokerBeanDefinitionParser implements BeanDefinitionParser {
 		if (brokerElem.hasAttribute("user-destination-prefix")) {
 			beanDef.getPropertyValues().add("userDestinationPrefix", brokerElem.getAttribute("user-destination-prefix"));
 		}
+		if (brokerElem.hasAttribute("path-matcher")) {
+			String pathMatcherRef = brokerElem.getAttribute("path-matcher");
+			beanDef.getPropertyValues().add("pathMatcher", new RuntimeBeanReference(pathMatcherRef));
+		}
 		return new RuntimeBeanReference(registerBeanDef(beanDef, context, source));
 	}
 
@@ -616,10 +620,9 @@ class MessageBrokerBeanDefinitionParser implements BeanDefinitionParser {
 		if (context.getRegistry().containsBeanDefinition(name)) {
 			beanDef.getPropertyValues().add("outboundChannelExecutor", context.getRegistry().getBeanDefinition(name));
 		}
-		name = SCHEDULER_BEAN_NAME;
-		if (context.getRegistry().containsBeanDefinition(name)) {
-			beanDef.getPropertyValues().add("sockJsTaskScheduler", context.getRegistry().getBeanDefinition(name));
-		}
+		Object scheduler = WebSocketNamespaceUtils.registerScheduler(SCHEDULER_BEAN_NAME, context, source);
+		beanDef.getPropertyValues().add("sockJsTaskScheduler", scheduler);
+
 		registerBeanDefByName("webSocketMessageBrokerStats", beanDef, context, source);
 	}
 

@@ -45,7 +45,7 @@ import org.springframework.cglib.proxy.MethodProxy;
 import org.springframework.cglib.proxy.NoOp;
 import org.springframework.cglib.transform.ClassEmitterTransformer;
 import org.springframework.cglib.transform.TransformingClassGenerator;
-import org.springframework.core.annotation.AnnotationUtils;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.objenesis.ObjenesisException;
 import org.springframework.objenesis.SpringObjenesis;
 import org.springframework.util.Assert;
@@ -159,7 +159,7 @@ class ConfigurationClassEnhancer {
 	 * Conditional {@link Callback}.
 	 * @see ConditionalCallbackFilter
 	 */
-	private static interface ConditionalCallback extends Callback {
+	private interface ConditionalCallback extends Callback {
 
 		boolean isMatch(Method candidateMethod);
 	}
@@ -311,7 +311,7 @@ class ConfigurationClassEnhancer {
 			String beanName = BeanAnnotationHelper.determineBeanNameFor(beanMethod);
 
 			// Determine whether this bean is a scoped-proxy
-			Scope scope = AnnotationUtils.findAnnotation(beanMethod, Scope.class);
+			Scope scope = AnnotatedElementUtils.findMergedAnnotation(beanMethod, Scope.class);
 			if (scope != null && scope.proxyMode() != ScopedProxyMode.NO) {
 				String scopedBeanName = ScopedProxyCreator.getTargetBeanName(beanName);
 				if (beanFactory.isCurrentlyInCreation(scopedBeanName)) {
@@ -343,7 +343,8 @@ class ConfigurationClassEnhancer {
 				// The factory is calling the bean method in order to instantiate and register the bean
 				// (i.e. via a getBean() call) -> invoke the super implementation of the method to actually
 				// create the bean instance.
-				if (BeanFactoryPostProcessor.class.isAssignableFrom(beanMethod.getReturnType())) {
+				if (logger.isWarnEnabled() &&
+						BeanFactoryPostProcessor.class.isAssignableFrom(beanMethod.getReturnType())) {
 					logger.warn(String.format("@Bean method %s.%s is non-static and returns an object " +
 							"assignable to Spring's BeanFactoryPostProcessor interface. This will " +
 							"result in a failure to process annotations such as @Autowired, " +

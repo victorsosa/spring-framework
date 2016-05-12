@@ -54,6 +54,7 @@ import org.springframework.context.event.test.GenericEventPojo;
 import org.springframework.context.event.test.Identifiable;
 import org.springframework.context.event.test.TestEvent;
 import org.springframework.context.support.ClassPathXmlApplicationContext;
+import org.springframework.core.annotation.AliasFor;
 import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -116,7 +117,7 @@ public class AnnotationDrivenEventListenerTests {
 	public void metaAnnotationIsDiscovered() {
 		load(MetaAnnotationListenerTestBean.class);
 
-		MetaAnnotationListenerTestBean bean = context.getBean(MetaAnnotationListenerTestBean.class);
+		MetaAnnotationListenerTestBean bean = this.context.getBean(MetaAnnotationListenerTestBean.class);
 		this.eventCollector.assertNoEventReceived(bean);
 
 		TestEvent event = new TestEvent();
@@ -148,9 +149,9 @@ public class AnnotationDrivenEventListenerTests {
 		failingContext.register(BasicConfiguration.class,
 				InvalidMethodSignatureEventListener.class);
 
-		thrown.expect(BeanInitializationException.class);
-		thrown.expectMessage(InvalidMethodSignatureEventListener.class.getName());
-		thrown.expectMessage("cannotBeCalled");
+		this.thrown.expect(BeanInitializationException.class);
+		this.thrown.expectMessage(InvalidMethodSignatureEventListener.class.getName());
+		this.thrown.expectMessage("cannotBeCalled");
 		failingContext.refresh();
 	}
 
@@ -340,7 +341,7 @@ public class AnnotationDrivenEventListenerTests {
 		this.eventCollector.assertNoEventReceived(listener);
 
 		this.context.publishEvent(event);
-		countDownLatch.await(2, TimeUnit.SECONDS);
+		this.countDownLatch.await(2, TimeUnit.SECONDS);
 		this.eventCollector.assertEvent(listener, event);
 		this.eventCollector.assertTotalEventsCount(1);
 	}
@@ -355,7 +356,7 @@ public class AnnotationDrivenEventListenerTests {
 		this.eventCollector.assertNoEventReceived(listener);
 
 		this.context.publishEvent(event);
-		countDownLatch.await(2, TimeUnit.SECONDS);
+		this.countDownLatch.await(2, TimeUnit.SECONDS);
 		this.eventCollector.assertEvent(listener, event);
 		this.eventCollector.assertTotalEventsCount(1);
 	}
@@ -370,7 +371,7 @@ public class AnnotationDrivenEventListenerTests {
 		this.eventCollector.assertNoEventReceived(listener);
 
 		this.context.publishEvent(event);
-		countDownLatch.await(2, TimeUnit.SECONDS);
+		this.countDownLatch.await(2, TimeUnit.SECONDS);
 		this.eventCollector.assertEvent(listener, event);
 		this.eventCollector.assertTotalEventsCount(1);
 	}
@@ -400,7 +401,7 @@ public class AnnotationDrivenEventListenerTests {
 		this.eventCollector.assertNoEventReceived(listener);
 
 		this.context.publishEvent(event);
-		countDownLatch.await(2, TimeUnit.SECONDS);
+		this.countDownLatch.await(2, TimeUnit.SECONDS);
 
 		this.eventCollector.assertEvent(listener, event);
 		this.eventCollector.assertTotalEventsCount(1);
@@ -698,7 +699,7 @@ public class AnnotationDrivenEventListenerTests {
 		public void handleAsync(AnotherTestEvent event) {
 			collectEvent(event);
 			if ("fail".equals(event.content)) {
-				countDownLatch.countDown();
+				this.countDownLatch.countDown();
 				throw new IllegalStateException("Test exception");
 			}
 		}
@@ -716,7 +717,7 @@ public class AnnotationDrivenEventListenerTests {
 		public void handleAsync(AnotherTestEvent event) {
 			assertTrue(!Thread.currentThread().getName().equals(event.content));
 			collectEvent(event);
-			countDownLatch.countDown();
+			this.countDownLatch.countDown();
 		}
 	}
 
@@ -755,15 +756,15 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Override
 		public void handleIt(TestEvent event) {
-			eventCollector.addEvent(this, event);
+			this.eventCollector.addEvent(this, event);
 		}
 
 		@EventListener
 		@Async
 		public void handleAsync(AnotherTestEvent event) {
 			assertTrue(!Thread.currentThread().getName().equals(event.content));
-			eventCollector.addEvent(this, event);
-			countDownLatch.countDown();
+			this.eventCollector.addEvent(this, event);
+			this.countDownLatch.countDown();
 		}
 	}
 
@@ -781,15 +782,15 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Override
 		public void handleIt(TestEvent event) {
-			eventCollector.addEvent(this, event);
+			this.eventCollector.addEvent(this, event);
 		}
 
 		@EventListener
 		@Async
 		public void handleAsync(AnotherTestEvent event) {
 			assertTrue(!Thread.currentThread().getName().equals(event.content));
-			eventCollector.addEvent(this, event);
-			countDownLatch.countDown();
+			this.eventCollector.addEvent(this, event);
+			this.countDownLatch.countDown();
 		}
 	}
 
@@ -810,7 +811,7 @@ public class AnnotationDrivenEventListenerTests {
 
 		@Override
 		public void handleIt(TestEvent event) {
-			eventCollector.addEvent(this, event);
+			this.eventCollector.addEvent(this, event);
 		}
 	}
 
@@ -868,6 +869,16 @@ public class AnnotationDrivenEventListenerTests {
 	}
 
 
+
+	@EventListener
+	@Retention(RetentionPolicy.RUNTIME)
+	public @interface ConditionalEvent {
+
+		@AliasFor(annotation = EventListener.class, attribute = "condition")
+		String value();
+	}
+
+
 	@Component
 	static class ConditionalEventListener extends TestEventListener {
 
@@ -883,12 +894,12 @@ public class AnnotationDrivenEventListenerTests {
 			super.handleString(payload);
 		}
 
-		@EventListener(condition = "#root.event.timestamp > #p0")
+		@ConditionalEvent("#root.event.timestamp > #p0")
 		public void handleTimestamp(Long timestamp) {
 			collectEvent(timestamp);
 		}
 
-		@EventListener(condition = "@conditionEvaluator.valid(#p0)")
+		@ConditionalEvent("@conditionEvaluator.valid(#p0)")
 		public void handleRatio(Double ratio) {
 			collectEvent(ratio);
 		}
@@ -903,18 +914,18 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Order(50)
 		public void handleThird(String payload) {
-			order.add("third");
+			this.order.add("third");
 		}
 
 		@EventListener
 		@Order(-50)
 		public void handleFirst(String payload) {
-			order.add("first");
+			this.order.add("first");
 		}
 
 		@EventListener
 		public void handleSecond(String payload) {
-			order.add("second");
+			this.order.add("second");
 		}
 	}
 

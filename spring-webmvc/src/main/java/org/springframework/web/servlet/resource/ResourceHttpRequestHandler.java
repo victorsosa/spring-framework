@@ -16,15 +16,12 @@
 
 package org.springframework.web.servlet.resource;
 
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 import javax.servlet.ServletException;
-import javax.servlet.ServletOutputStream;
+import javax.servlet.ServletResponse;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
@@ -33,18 +30,20 @@ import org.apache.commons.logging.LogFactory;
 
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.ResourceRegion;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpRange;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.ResourceHttpMessageConverter;
+import org.springframework.http.converter.ResourceRegionHttpMessageConverter;
 import org.springframework.http.server.ServletServerHttpRequest;
+import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.CollectionUtils;
-import org.springframework.util.MimeTypeUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.ResourceUtils;
-import org.springframework.util.StreamUtils;
 import org.springframework.util.StringUtils;
 import org.springframework.web.HttpMediaTypeNotAcceptableException;
 import org.springframework.web.HttpRequestHandler;
@@ -92,10 +91,11 @@ import org.springframework.web.servlet.support.WebContentGenerator;
 public class ResourceHttpRequestHandler extends WebContentGenerator
 		implements HttpRequestHandler, InitializingBean, CorsConfigurationSource {
 
-	private static final Log logger = LogFactory.getLog(ResourceHttpRequestHandler.class);
+	// Servlet 3.1 setContentLengthLong(long) available?
+	private static final boolean contentLengthLongAvailable =
+			ClassUtils.hasMethod(ServletResponse.class, "setContentLengthLong", long.class);
 
-	private static final boolean jafPresent = ClassUtils.isPresent(
-			"javax.activation.FileTypeMap", ResourceHttpRequestHandler.class.getClassLoader());
+	private static final Log logger = LogFactory.getLog(ResourceHttpRequestHandler.class);
 
 
 	private final List<Resource> locations = new ArrayList<Resource>(4);
@@ -103,6 +103,10 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 	private final List<ResourceResolver> resourceResolvers = new ArrayList<ResourceResolver>(4);
 
 	private final List<ResourceTransformer> resourceTransformers = new ArrayList<ResourceTransformer>(4);
+
+	private ResourceHttpMessageConverter resourceHttpMessageConverter;
+
+	private ResourceRegionHttpMessageConverter resourceRegionHttpMessageConverter;
 
 	private ContentNegotiationManager contentNegotiationManager;
 
@@ -115,7 +119,7 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 
 
 	/**
-	 * Set a {@code List} of {@code Resource} paths to use as sources
+	 * Set the {@code List} of {@code Resource} paths to use as sources
 	 * for serving static resources.
 	 */
 	public void setLocations(List<Resource> locations) {
@@ -124,6 +128,10 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 		this.locations.addAll(locations);
 	}
 
+	/**
+	 * Return the {@code List} of {@code Resource} paths to use as sources
+	 * for serving static resources.
+	 */
 	public List<Resource> getLocations() {
 		return this.locations;
 	}
@@ -166,6 +174,40 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 	}
 
 	/**
+	 * Configure the {@link ResourceHttpMessageConverter} to use.
+	 * <p>By default a {@link ResourceHttpMessageConverter} will be configured.
+	 * @since 4.3
+	 */
+	public void setResourceHttpMessageConverter(ResourceHttpMessageConverter resourceHttpMessageConverter) {
+		this.resourceHttpMessageConverter = resourceHttpMessageConverter;
+	}
+
+	/**
+	 * Return the list of configured resource converters.
+	 * @since 4.3
+	 */
+	public ResourceHttpMessageConverter getResourceHttpMessageConverter() {
+		return this.resourceHttpMessageConverter;
+	}
+
+	/**
+	 * Configure the {@link ResourceRegionHttpMessageConverter} to use.
+	 * <p>By default a {@link ResourceRegionHttpMessageConverter} will be configured.
+	 * @since 4.3
+	 */
+	public void setResourceRegionHttpMessageConverter(ResourceRegionHttpMessageConverter resourceRegionHttpMessageConverter) {
+		this.resourceRegionHttpMessageConverter = resourceRegionHttpMessageConverter;
+	}
+
+	/**
+	 * Return the list of configured resource region converters.
+	 * @since 4.3
+	 */
+	public ResourceRegionHttpMessageConverter getResourceRegionHttpMessageConverter() {
+		return this.resourceRegionHttpMessageConverter;
+	}
+
+	/**
 	 * Configure a {@code ContentNegotiationManager} to determine the media types
 	 * for resources being served. If the manager contains a path
 	 * extension strategy it will be used to look up the file extension
@@ -183,6 +225,10 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 		this.contentNegotiationManager = contentNegotiationManager;
 	}
 
+	/**
+	 * Return the specified content negotiation manager.
+	 * @since 4.3
+	 */
 	public ContentNegotiationManager getContentNegotiationManager() {
 		return this.contentNegotiationManager;
 	}
@@ -195,6 +241,9 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 		this.corsConfiguration = corsConfiguration;
 	}
 
+	/**
+	 * Return the specified CORS configuration.
+	 */
 	@Override
 	public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
 		return this.corsConfiguration;
@@ -211,9 +260,14 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 			this.resourceResolvers.add(new PathResourceResolver());
 		}
 		initAllowedLocations();
-
 		if (this.contentNegotiationManager == null) {
 			this.contentNegotiationManager = initContentNegotiationManager();
+		}
+		if (this.resourceHttpMessageConverter == null) {
+			this.resourceHttpMessageConverter = new ResourceHttpMessageConverter();
+		}
+		if(this.resourceRegionHttpMessageConverter == null) {
+			this.resourceRegionHttpMessageConverter = new ResourceRegionHttpMessageConverter();
 		}
 	}
 
@@ -226,7 +280,7 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 		if (CollectionUtils.isEmpty(this.locations)) {
 			return;
 		}
-		for (int i = getResourceResolvers().size()-1; i >= 0; i--) {
+		for (int i = getResourceResolvers().size() - 1; i >= 0; i--) {
 			if (getResourceResolvers().get(i) instanceof PathResourceResolver) {
 				PathResourceResolver pathResolver = (PathResourceResolver) getResourceResolvers().get(i);
 				if (ObjectUtils.isEmpty(pathResolver.getAllowedLocations())) {
@@ -310,12 +364,30 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 			return;
 		}
 
+		ServletServerHttpResponse outputMessage = new ServletServerHttpResponse(response);
 		if (request.getHeader(HttpHeaders.RANGE) == null) {
 			setHeaders(response, resource, mediaType);
-			writeContent(response, resource);
+			this.resourceHttpMessageConverter.write(resource, mediaType, outputMessage);
 		}
 		else {
-			writePartialContent(request, response, resource, mediaType);
+			response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
+			ServletServerHttpRequest inputMessage = new ServletServerHttpRequest(request);
+			try {
+				List<HttpRange> httpRanges = inputMessage.getHeaders().getRange();
+				response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+				if(httpRanges.size() == 1) {
+					ResourceRegion resourceRegion = httpRanges.get(0).toResourceRegion(resource);
+					this.resourceRegionHttpMessageConverter.write(resourceRegion, mediaType, outputMessage);
+				}
+				else {
+					this.resourceRegionHttpMessageConverter.write(
+							HttpRange.toResourceRegions(httpRanges, resource), mediaType, outputMessage);
+				}
+			}
+			catch (IllegalArgumentException ex) {
+				response.setHeader("Content-Range", "bytes */" + resource.contentLength());
+				response.sendError(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
+			}
 		}
 	}
 
@@ -443,7 +515,6 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 	 */
 	@SuppressWarnings("deprecation")
 	protected MediaType getMediaType(HttpServletRequest request, Resource resource) {
-
 		// For backwards compatibility
 		MediaType mediaType = getMediaType(resource);
 		if (mediaType != null) {
@@ -459,7 +530,10 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 		if (mediaType == null) {
 			ServletWebRequest webRequest = new ServletWebRequest(request);
 			try {
-				getContentNegotiationManager().resolveMediaTypes(webRequest);
+				List<MediaType> mediaTypes = getContentNegotiationManager().resolveMediaTypes(webRequest);
+				if (!mediaTypes.isEmpty()) {
+					mediaType = mediaTypes.get(0);
+				}
 			}
 			catch (HttpMediaTypeNotAcceptableException ex) {
 				// Ignore
@@ -492,9 +566,17 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 	protected void setHeaders(HttpServletResponse response, Resource resource, MediaType mediaType) throws IOException {
 		long length = resource.contentLength();
 		if (length > Integer.MAX_VALUE) {
-			throw new IOException("Resource content too long (beyond Integer.MAX_VALUE): " + resource);
+			if (contentLengthLongAvailable) {
+				response.setContentLengthLong(length);
+			}
+			else {
+				response.setHeader(HttpHeaders.CONTENT_LENGTH, Long.toString(length));
+			}
 		}
-		response.setContentLength((int) length);
+		else {
+			response.setContentLength((int) length);
+		}
+
 		if (mediaType != null) {
 			response.setContentType(mediaType.toString());
 		}
@@ -505,139 +587,6 @@ public class ResourceHttpRequestHandler extends WebContentGenerator
 			response.setHeader(HttpHeaders.ETAG, "\"" + ((VersionedResource) resource).getVersion() + "\"");
 		}
 		response.setHeader(HttpHeaders.ACCEPT_RANGES, "bytes");
-	}
-
-	/**
-	 * Write the actual content out to the given servlet response,
-	 * streaming the resource's content.
-	 * @param response current servlet response
-	 * @param resource the identified resource (never {@code null})
-	 * @throws IOException in case of errors while writing the content
-	 */
-	protected void writeContent(HttpServletResponse response, Resource resource) throws IOException {
-		try {
-			InputStream in = resource.getInputStream();
-			try {
-				StreamUtils.copy(in, response.getOutputStream());
-			}
-			catch (NullPointerException ex) {
-				// ignore, see SPR-13620
-			}
-			finally {
-				try {
-					in.close();
-				}
-				catch (Throwable ex) {
-					// ignore, see SPR-12999
-				}
-			}
-		}
-		catch (FileNotFoundException ex) {
-			// ignore, see SPR-12999
-		}
-	}
-
-	/**
-	 * Write parts of the resource as indicated by the request {@code Range} header.
-	 * @param request current servlet request
-	 * @param response current servlet response
-	 * @param resource the identified resource (never {@code null})
-	 * @param contentType the content type
-	 * @throws IOException in case of errors while writing the content
-	 */
-	protected void writePartialContent(HttpServletRequest request, HttpServletResponse response,
-			Resource resource, MediaType contentType) throws IOException {
-
-		long length = resource.contentLength();
-
-		List<HttpRange> ranges;
-		try {
-			HttpHeaders headers = new ServletServerHttpRequest(request).getHeaders();
-			ranges = headers.getRange();
-		}
-		catch (IllegalArgumentException ex) {
-			response.addHeader("Content-Range", "bytes */" + length);
-			response.sendError(HttpServletResponse.SC_REQUESTED_RANGE_NOT_SATISFIABLE);
-            return;
-		}
-
-		response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
-
-		if (ranges.size() == 1) {
-			HttpRange range = ranges.get(0);
-
-			long start = range.getRangeStart(length);
-			long end = range.getRangeEnd(length);
-			long rangeLength = end - start + 1;
-
-			setHeaders(response, resource, contentType);
-			response.addHeader("Content-Range", "bytes " + start + "-" + end + "/" + length);
-            response.setContentLength((int) rangeLength);
-
-			InputStream in = resource.getInputStream();
-			try {
-				copyRange(in, response.getOutputStream(), start, end);
-			}
-			finally {
-				try {
-					in.close();
-				}
-				catch (IOException ex) {
-					// ignore
-				}
-			}
-		}
-		else {
-			String boundaryString = MimeTypeUtils.generateMultipartBoundaryString();
-			response.setContentType("multipart/byteranges; boundary=" + boundaryString);
-
-			ServletOutputStream out = response.getOutputStream();
-
-			for (HttpRange range : ranges) {
-				long start = range.getRangeStart(length);
-				long end = range.getRangeEnd(length);
-
-				InputStream in = resource.getInputStream();
-
-                // Writing MIME header.
-                out.println();
-                out.println("--" + boundaryString);
-                if (contentType != null) {
-	                out.println("Content-Type: " + contentType);
-                }
-                out.println("Content-Range: bytes " + start + "-" + end + "/" + length);
-                out.println();
-
-                // Printing content
-                copyRange(in, out, start, end);
-			}
-			out.println();
-            out.print("--" + boundaryString + "--");
-		}
-	}
-
-	private void copyRange(InputStream in, OutputStream out, long start, long end) throws IOException {
-		long skipped = in.skip(start);
-		if (skipped < start) {
-			throw new IOException("Skipped only " + skipped + " bytes out of " + start + " required.");
-		}
-
-		long bytesToCopy = end - start + 1;
-		byte buffer[] = new byte[StreamUtils.BUFFER_SIZE];
-		while (bytesToCopy > 0) {
-			int bytesRead = in.read(buffer);
-			if (bytesRead <= bytesToCopy) {
-				out.write(buffer, 0, bytesRead);
-				bytesToCopy -= bytesRead;
-			}
-			else {
-				out.write(buffer, 0, (int) bytesToCopy);
-				bytesToCopy = 0;
-			}
-			if (bytesRead == -1) {
-				break;
-			}
-		}
 	}
 
 

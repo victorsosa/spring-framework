@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.commons.logging.LogFactory;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.xml.sax.InputSource;
 
@@ -1612,11 +1611,13 @@ public class XmlBeanFactoryTests {
 		assertEquals(0, ((String[]) bean.array).length);
 	}
 
-	@Test @Ignore  // TODO: SPR-13987
+	@Test
 	public void testConstructorWithUnresolvableParameterName() {
 		DefaultListableBeanFactory xbf = new DefaultListableBeanFactory();
 		new XmlBeanDefinitionReader(xbf).loadBeanDefinitions(CONSTRUCTOR_ARG_CONTEXT);
 		AtomicInteger bean = (AtomicInteger) xbf.getBean("constructorUnresolvableName");
+		assertEquals(1, bean.get());
+		bean = (AtomicInteger) xbf.getBean("constructorUnresolvableNameWithIndex");
 		assertEquals(1, bean.get());
 	}
 

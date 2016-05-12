@@ -71,11 +71,11 @@ import org.springframework.util.StringUtils;
  * <em>meta-present</em> on the other annotation.
  *
  * <h3>Meta-annotation Support</h3>
- * <p>Most {@code find*()} methods and some {@code get*()} methods in this
- * class provide support for finding annotations used as meta-annotations.
- * Consult the Javadoc for each method in this class for details. For support
- * for meta-annotations with <em>attribute overrides</em> in
- * <em>composed annotations</em>, use {@link AnnotatedElementUtils} instead.
+ * <p>Most {@code find*()} methods and some {@code get*()} methods in this class
+ * provide support for finding annotations used as meta-annotations. Consult the
+ * javadoc for each method in this class for details. For fine-grained support for
+ * meta-annotations with <em>attribute overrides</em> in <em>composed annotations</em>,
+ * consider using {@link AnnotatedElementUtils}'s more specific methods instead.
  *
  * <h3>Attribute Aliases</h3>
  * <p>All public methods in this class that return annotations, arrays of
@@ -111,6 +111,7 @@ public abstract class AnnotationUtils {
 	 */
 	public static final String VALUE = "value";
 
+	private static final String REPEATABLE_CLASS_NAME = "java.lang.annotation.Repeatable";
 
 	private static final Map<AnnotationCacheKey, Annotation> findAnnotationCache =
 			new ConcurrentReferenceHashMap<AnnotationCacheKey, Annotation>(256);
@@ -308,6 +309,7 @@ public abstract class AnnotationUtils {
 	 * @since 4.2
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class, Class)
 	 * @see #getDeclaredRepeatableAnnotations(AnnotatedElement, Class, Class)
+	 * @see AnnotatedElementUtils#getMergedRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see org.springframework.core.BridgeMethodResolver#findBridgedMethod
 	 * @see java.lang.annotation.Repeatable
 	 * @see java.lang.reflect.AnnotatedElement#getAnnotationsByType
@@ -343,6 +345,7 @@ public abstract class AnnotationUtils {
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see #getDeclaredRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see #getDeclaredRepeatableAnnotations(AnnotatedElement, Class, Class)
+	 * @see AnnotatedElementUtils#getMergedRepeatableAnnotations(AnnotatedElement, Class, Class)
 	 * @see org.springframework.core.BridgeMethodResolver#findBridgedMethod
 	 * @see java.lang.annotation.Repeatable
 	 * @see java.lang.reflect.AnnotatedElement#getAnnotationsByType
@@ -388,6 +391,7 @@ public abstract class AnnotationUtils {
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class, Class)
 	 * @see #getDeclaredRepeatableAnnotations(AnnotatedElement, Class, Class)
+	 * @see AnnotatedElementUtils#getMergedRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see org.springframework.core.BridgeMethodResolver#findBridgedMethod
 	 * @see java.lang.annotation.Repeatable
 	 * @see java.lang.reflect.AnnotatedElement#getDeclaredAnnotationsByType
@@ -423,6 +427,7 @@ public abstract class AnnotationUtils {
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class)
 	 * @see #getRepeatableAnnotations(AnnotatedElement, Class, Class)
 	 * @see #getDeclaredRepeatableAnnotations(AnnotatedElement, Class)
+	 * @see AnnotatedElementUtils#getMergedRepeatableAnnotations(AnnotatedElement, Class, Class)
 	 * @see org.springframework.core.BridgeMethodResolver#findBridgedMethod
 	 * @see java.lang.annotation.Repeatable
 	 * @see java.lang.reflect.AnnotatedElement#getDeclaredAnnotationsByType
@@ -1721,6 +1726,29 @@ public abstract class AnnotationUtils {
 	}
 
 	/**
+	 * Resolve the container type for the supplied repeatable {@code annotationType}.
+	 * <p>Automatically detects a <em>container annotation</em> declared via
+	 * {@link java.lang.annotation.Repeatable}. If the supplied annotation type
+	 * is not annotated with {@code @Repeatable}, this method simply returns
+	 * {@code null}.
+	 * @since 4.2
+	 */
+	@SuppressWarnings("unchecked")
+	static Class<? extends Annotation> resolveContainerAnnotationType(Class<? extends Annotation> annotationType) {
+		try {
+			Annotation repeatable = getAnnotation(annotationType, REPEATABLE_CLASS_NAME);
+			if (repeatable != null) {
+				Object value = getValue(repeatable);
+				return (Class<? extends Annotation>) value;
+			}
+		}
+		catch (Exception ex) {
+			handleIntrospectionFailure(annotationType, ex);
+		}
+		return null;
+	}
+
+	/**
 	 * <p>If the supplied throwable is an {@link AnnotationConfigurationException},
 	 * it will be cast to an {@code AnnotationConfigurationException} and thrown,
 	 * allowing it to propagate to the caller.
@@ -1774,7 +1802,7 @@ public abstract class AnnotationUtils {
 	/**
 	 * Cache key for the AnnotatedElement cache.
 	 */
-	private static class AnnotationCacheKey {
+	private static final class AnnotationCacheKey implements Comparable<AnnotationCacheKey> {
 
 		private final AnnotatedElement element;
 
@@ -1801,12 +1829,24 @@ public abstract class AnnotationUtils {
 		public int hashCode() {
 			return (this.element.hashCode() * 29 + this.annotationType.hashCode());
 		}
+
+		@Override
+		public String toString() {
+			return "@" + this.annotationType + " on " + this.element;
+		}
+
+		@Override
+		public int compareTo(AnnotationCacheKey other) {
+			int result = this.element.toString().compareTo(other.element.toString());
+			if (result == 0) {
+				result = this.annotationType.getName().compareTo(other.annotationType.getName());
+			}
+			return result;
+		}
 	}
 
 
 	private static class AnnotationCollector<A extends Annotation> {
-
-		private static final String REPEATABLE_CLASS_NAME = "java.lang.annotation.Repeatable";
 
 		private final Class<A> annotationType;
 
@@ -1823,21 +1863,6 @@ public abstract class AnnotationUtils {
 			this.containerAnnotationType = (containerAnnotationType != null ? containerAnnotationType :
 					resolveContainerAnnotationType(annotationType));
 			this.declaredMode = declaredMode;
-		}
-
-		@SuppressWarnings("unchecked")
-		static Class<? extends Annotation> resolveContainerAnnotationType(Class<? extends Annotation> annotationType) {
-			try {
-				Annotation repeatable = getAnnotation(annotationType, REPEATABLE_CLASS_NAME);
-				if (repeatable != null) {
-					Object value = AnnotationUtils.getValue(repeatable);
-					return (Class<? extends Annotation>) value;
-				}
-			}
-			catch (Exception ex) {
-				handleIntrospectionFailure(annotationType, ex);
-			}
-			return null;
 		}
 
 		Set<A> getResult(AnnotatedElement element) {

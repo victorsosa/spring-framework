@@ -47,6 +47,7 @@ import org.springframework.beans.factory.config.ConstructorArgumentValues.ValueH
 import org.springframework.beans.factory.config.DependencyDescriptor;
 import org.springframework.core.GenericTypeResolver;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.NamedThreadLocal;
 import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.MethodInvoker;
@@ -68,6 +69,9 @@ import org.springframework.util.StringUtils;
  * @see AbstractAutowireCapableBeanFactory
  */
 class ConstructorResolver {
+
+	private static final NamedThreadLocal<InjectionPoint> currentInjectionPoint =
+			new NamedThreadLocal<InjectionPoint>("Current injection point");
 
 	private final AbstractAutowireCapableBeanFactory beanFactory;
 
@@ -182,8 +186,8 @@ class ConstructorResolver {
 								paramNames = pnd.getParameterNames(candidate);
 							}
 						}
-						argsHolder = createArgumentArray(
-								beanName, mbd, resolvedValues, bw, paramTypes, paramNames, candidate, autowiring);
+						argsHolder = createArgumentArray(beanName, mbd, resolvedValues, bw, paramTypes, paramNames,
+								getUserDeclaredConstructor(candidate), autowiring);
 					}
 					catch (UnsatisfiedDependencyException ex) {
 						if (this.beanFactory.logger.isTraceEnabled()) {
@@ -268,7 +272,7 @@ class ConstructorResolver {
 						mbd, beanName, this.beanFactory, constructorToUse, argsToUse);
 			}
 
-			bw.setWrappedInstance(beanInstance);
+			bw.setBeanInstance(beanInstance);
 			return bw;
 		}
 		catch (Throwable ex) {
@@ -446,8 +450,7 @@ class ConstructorResolver {
 
 			LinkedList<UnsatisfiedDependencyException> causes = null;
 
-			for (int i = 0; i < candidates.length; i++) {
-				Method candidate = candidates[i];
+			for (Method candidate : candidates) {
 				Class<?>[] paramTypes = candidate.getParameterTypes();
 
 				if (paramTypes.length >= minNrOfArgs) {
@@ -589,7 +592,7 @@ class ConstructorResolver {
 			if (beanInstance == null) {
 				return null;
 			}
-			bw.setWrappedInstance(beanInstance);
+			bw.setBeanInstance(beanInstance);
 			return bw;
 		}
 		catch (Throwable ex) {
@@ -672,7 +675,7 @@ class ConstructorResolver {
 
 		for (int paramIndex = 0; paramIndex < paramTypes.length; paramIndex++) {
 			Class<?> paramType = paramTypes[paramIndex];
-			String paramName = (paramNames != null ? paramNames[paramIndex] : null);
+			String paramName = (paramNames != null ? paramNames[paramIndex] : "");
 			// Try to find matching constructor argument value, either indexed or generic.
 			ConstructorArgumentValues.ValueHolder valueHolder =
 					resolvedValues.getArgumentValue(paramIndex, paramType, paramName, usedValueHolders);
@@ -800,14 +803,49 @@ class ConstructorResolver {
 		return resolvedArgs;
 	}
 
+	protected Constructor<?> getUserDeclaredConstructor(Constructor<?> constructor) {
+		Class<?> declaringClass = constructor.getDeclaringClass();
+		Class<?> userClass = ClassUtils.getUserClass(declaringClass);
+		if (userClass != declaringClass) {
+			try {
+				return userClass.getDeclaredConstructor(constructor.getParameterTypes());
+			}
+			catch (NoSuchMethodException ex) {
+				// No equivalent constructor on user class (superclass)...
+				// Let's proceed with the given constructor as we usually would.
+			}
+		}
+		return constructor;
+	}
+
 	/**
 	 * Template method for resolving the specified argument which is supposed to be autowired.
 	 */
 	protected Object resolveAutowiredArgument(
 			MethodParameter param, String beanName, Set<String> autowiredBeanNames, TypeConverter typeConverter) {
 
+		if (InjectionPoint.class.isAssignableFrom(param.getParameterType())) {
+			InjectionPoint injectionPoint = currentInjectionPoint.get();
+			if (injectionPoint == null) {
+				throw new IllegalStateException("No current InjectionPoint available for " + param);
+			}
+			return injectionPoint;
+		}
 		return this.beanFactory.resolveDependency(
 				new DependencyDescriptor(param, true), beanName, autowiredBeanNames, typeConverter);
+	}
+
+
+
+	static InjectionPoint setCurrentInjectionPoint(InjectionPoint injectionPoint) {
+		InjectionPoint old = currentInjectionPoint.get();
+		if (injectionPoint != null) {
+			currentInjectionPoint.set(injectionPoint);
+		}
+		else {
+			currentInjectionPoint.remove();
+		}
+		return old;
 	}
 
 

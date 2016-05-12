@@ -27,6 +27,7 @@ import org.springframework.cache.interceptor.CacheEvictOperation;
 import org.springframework.cache.interceptor.CacheOperation;
 import org.springframework.cache.interceptor.CachePutOperation;
 import org.springframework.cache.interceptor.CacheableOperation;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.StringUtils;
@@ -61,32 +62,35 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 	protected Collection<CacheOperation> parseCacheAnnotations(DefaultCacheConfig cachingConfig, AnnotatedElement ae) {
 		Collection<CacheOperation> ops = null;
 
-		Collection<Cacheable> cacheables = getAnnotations(ae, Cacheable.class);
-		if (cacheables != null) {
+		Collection<Cacheable> cacheables = AnnotatedElementUtils.findAllMergedAnnotations(ae, Cacheable.class);
+		if (!cacheables.isEmpty()) {
 			ops = lazyInit(ops);
 			for (Cacheable cacheable : cacheables) {
 				ops.add(parseCacheableAnnotation(ae, cachingConfig, cacheable));
 			}
 		}
-		Collection<CacheEvict> evicts = getAnnotations(ae, CacheEvict.class);
-		if (evicts != null) {
+		Collection<CacheEvict> evicts = AnnotatedElementUtils.findAllMergedAnnotations(ae, CacheEvict.class);
+		if (!evicts.isEmpty()) {
 			ops = lazyInit(ops);
 			for (CacheEvict evict : evicts) {
 				ops.add(parseEvictAnnotation(ae, cachingConfig, evict));
 			}
 		}
-		Collection<CachePut> puts = getAnnotations(ae, CachePut.class);
-		if (puts != null) {
+		Collection<CachePut> puts = AnnotatedElementUtils.findAllMergedAnnotations(ae, CachePut.class);
+		if (!puts.isEmpty()) {
 			ops = lazyInit(ops);
 			for (CachePut put : puts) {
 				ops.add(parsePutAnnotation(ae, cachingConfig, put));
 			}
 		}
-		Collection<Caching> cachings = getAnnotations(ae, Caching.class);
-		if (cachings != null) {
+		Collection<Caching> cachings = AnnotatedElementUtils.findAllMergedAnnotations(ae, Caching.class);
+		if (!cachings.isEmpty()) {
 			ops = lazyInit(ops);
 			for (Caching caching : cachings) {
-				ops.addAll(parseCachingAnnotation(ae, cachingConfig, caching));
+				Collection<CacheOperation> cachingOps = parseCachingAnnotation(ae, cachingConfig, caching);
+				if (cachingOps != null) {
+					ops.addAll(cachingOps);
+				}
 			}
 		}
 
@@ -100,6 +104,7 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 	CacheableOperation parseCacheableAnnotation(AnnotatedElement ae, DefaultCacheConfig defaultConfig, Cacheable cacheable) {
 		CacheableOperation.Builder builder = new CacheableOperation.Builder();
 
+		builder.setName(ae.toString());
 		builder.setCacheNames(cacheable.cacheNames());
 		builder.setCondition(cacheable.condition());
 		builder.setUnless(cacheable.unless());
@@ -108,7 +113,6 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 		builder.setCacheManager(cacheable.cacheManager());
 		builder.setCacheResolver(cacheable.cacheResolver());
 		builder.setSync(cacheable.sync());
-		builder.setName(ae.toString());
 
 		defaultConfig.applyDefault(builder);
 		CacheableOperation op = builder.build();
@@ -120,6 +124,7 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 	CacheEvictOperation parseEvictAnnotation(AnnotatedElement ae, DefaultCacheConfig defaultConfig, CacheEvict cacheEvict) {
 		CacheEvictOperation.Builder builder = new CacheEvictOperation.Builder();
 
+		builder.setName(ae.toString());
 		builder.setCacheNames(cacheEvict.cacheNames());
 		builder.setCondition(cacheEvict.condition());
 		builder.setKey(cacheEvict.key());
@@ -128,7 +133,6 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 		builder.setCacheResolver(cacheEvict.cacheResolver());
 		builder.setCacheWide(cacheEvict.allEntries());
 		builder.setBeforeInvocation(cacheEvict.beforeInvocation());
-		builder.setName(ae.toString());
 
 		defaultConfig.applyDefault(builder);
 		CacheEvictOperation op = builder.build();
@@ -140,6 +144,7 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 	CacheOperation parsePutAnnotation(AnnotatedElement ae, DefaultCacheConfig defaultConfig, CachePut cachePut) {
 		CachePutOperation.Builder builder = new CachePutOperation.Builder();
 
+		builder.setName(ae.toString());
 		builder.setCacheNames(cachePut.cacheNames());
 		builder.setCondition(cachePut.condition());
 		builder.setUnless(cachePut.unless());
@@ -147,7 +152,6 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 		builder.setKeyGenerator(cachePut.keyGenerator());
 		builder.setCacheManager(cachePut.cacheManager());
 		builder.setCacheResolver(cachePut.cacheResolver());
-		builder.setName(ae.toString());
 
 		defaultConfig.applyDefault(builder);
 		CachePutOperation op = builder.build();
@@ -196,26 +200,6 @@ public class SpringCacheAnnotationParser implements CacheAnnotationParser, Seria
 					annotation.cacheManager(), annotation.cacheResolver());
 		}
 		return new DefaultCacheConfig();
-	}
-
-	private <A extends Annotation> Collection<A> getAnnotations(AnnotatedElement ae, Class<A> annotationType) {
-		Collection<A> anns = new ArrayList<A>(1);
-
-		// look at raw annotation
-		A ann = ae.getAnnotation(annotationType);
-		if (ann != null) {
-			anns.add(AnnotationUtils.synthesizeAnnotation(ann, ae));
-		}
-
-		// scan meta-annotations
-		for (Annotation metaAnn : ae.getAnnotations()) {
-			ann = metaAnn.annotationType().getAnnotation(annotationType);
-			if (ann != null) {
-				anns.add(AnnotationUtils.synthesizeAnnotation(ann, ae));
-			}
-		}
-
-		return (!anns.isEmpty() ? anns : null);
 	}
 
 	/**

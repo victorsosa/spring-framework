@@ -1,5 +1,5 @@
 /*
- * Copyright 2002-2015 the original author or authors.
+ * Copyright 2002-2016 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -235,6 +235,53 @@ public class SpelCompilationCoverageTests extends AbstractExpressionTests {
 		assertEquals(true,expression.getValue(root));
 	}
 
+	@Test
+	public void operatorInstanceOf_SPR14250() throws Exception {
+		// primitive left operand - should get boxed, return true
+		expression = parse("3 instanceof T(Integer)");
+		assertEquals(true,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(true,expression.getValue());
+
+		// primitive left operand - should get boxed, return false
+		expression = parse("3 instanceof T(String)");
+		assertEquals(false,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(false,expression.getValue());
+		
+		// double slot left operand - should get boxed, return false
+		expression = parse("3.0d instanceof T(Integer)");
+		assertEquals(false,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(false,expression.getValue());
+
+		// double slot left operand - should get boxed, return true
+		expression = parse("3.0d instanceof T(Double)");
+		assertEquals(true,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(true,expression.getValue());
+		
+		// Only when the right hand operand is a direct type reference
+		// will it be compilable.
+		StandardEvaluationContext ctx = new StandardEvaluationContext();
+		ctx.setVariable("foo", String.class);
+		expression = parse("3 instanceof #foo");
+		assertEquals(false,expression.getValue(ctx));
+		assertCantCompile(expression);
+
+		// use of primitive as type for instanceof check - compilable
+		// but always false
+		expression = parse("3 instanceof T(int)");
+		assertEquals(false,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(false,expression.getValue());
+		
+		expression = parse("3 instanceof T(long)");
+		assertEquals(false,expression.getValue());
+		assertCanCompile(expression);
+		assertEquals(false,expression.getValue());
+	}
+	
 	@Test
 	public void stringLiteral() throws Exception {
 		expression = parser.parseExpression("'abcde'");
@@ -4267,7 +4314,7 @@ public class SpelCompilationCoverageTests extends AbstractExpressionTests {
 
 //		// time it interpreted
 //		long stime = System.currentTimeMillis();
-//		for (int i=0;i<100000;i++) {
+//		for (int i = 0;i<100000;i++) {
 //			v = expression.getValue(ctx,holder);
 //		}
 //		System.out.println((System.currentTimeMillis()-stime));
@@ -4278,7 +4325,7 @@ public class SpelCompilationCoverageTests extends AbstractExpressionTests {
 //
 //		// time it compiled
 //		stime = System.currentTimeMillis();
-//		for (int i=0;i<100000;i++) {
+//		for (int i = 0;i<100000;i++) {
 //			v = expression.getValue(ctx,holder);
 //		}
 //		System.out.println((System.currentTimeMillis()-stime));
@@ -5014,7 +5061,7 @@ public class SpelCompilationCoverageTests extends AbstractExpressionTests {
 
 		public void reset() {
 			i = 0;
-			_i=0;
+			_i = 0;
 			s = null;
 			_s = null;
 			field = null;

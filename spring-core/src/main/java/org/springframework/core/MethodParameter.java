@@ -48,15 +48,18 @@ import org.springframework.util.ClassUtils;
  */
 public class MethodParameter {
 
-	private static Class<?> javaUtilOptionalClass = null;
+	private static final Class<?> javaUtilOptionalClass;
 
 	static {
+		Class<?> clazz;
 		try {
-			javaUtilOptionalClass = ClassUtils.forName("java.util.Optional", MethodParameter.class.getClassLoader());
+			clazz = ClassUtils.forName("java.util.Optional", MethodParameter.class.getClassLoader());
 		}
 		catch (ClassNotFoundException ex) {
 			// Java 8 not available - Optional references simply not supported then.
+			clazz = null;
 		}
+		javaUtilOptionalClass = clazz;
 	}
 
 
@@ -312,7 +315,7 @@ public class MethodParameter {
 	}
 
 	/**
-	 * Return whether this method parameter is declared as optiona
+	 * Return whether this method parameter is declared as optional
 	 * in the form of Java 8's {@link java.util.Optional}.
 	 * @since 4.3
 	 */
@@ -403,6 +406,7 @@ public class MethodParameter {
 					Integer index = getTypeIndexForLevel(i);
 					type = args[index != null ? index : args.length - 1];
 				}
+				// TODO: Object.class if unresolvable
 			}
 			if (type instanceof Class) {
 				return (Class<?>) type;
@@ -460,6 +464,16 @@ public class MethodParameter {
 	}
 
 	/**
+	 * Return whether the method/constructor is annotated with the given type.
+	 * @param annotationType the annotation type to look for
+	 * @since 4.3
+	 * @see #getMethodAnnotation(Class)
+	 */
+	public <A extends Annotation> boolean hasMethodAnnotation(Class<A> annotationType) {
+		return getAnnotatedElement().isAnnotationPresent(annotationType);
+	}
+
+	/**
 	 * Return the annotations associated with the specific method/constructor parameter.
 	 */
 	public Annotation[] getParameterAnnotations() {
@@ -477,32 +491,36 @@ public class MethodParameter {
 	}
 
 	/**
-	 * Return the parameter annotation of the given type, if available.
-	 * @param annotationType the annotation type to look for
-	 * @return the annotation object, or {@code null} if not found
-	 */
-	@SuppressWarnings("unchecked")
-	public <T extends Annotation> T getParameterAnnotation(Class<T> annotationType) {
-		Annotation[] anns = getParameterAnnotations();
-		for (Annotation ann : anns) {
-			if (annotationType.isInstance(ann)) {
-				return (T) ann;
-			}
-		}
-		return null;
-	}
-
-	/**
-	 * Return true if the parameter has at least one annotation, false if it has none.
+	 * Return {@code true} if the parameter has at least one annotation,
+	 * {@code false} if it has none.
+	 * @see #getParameterAnnotations()
 	 */
 	public boolean hasParameterAnnotations() {
 		return (getParameterAnnotations().length != 0);
 	}
 
 	/**
-	 * Return true if the parameter has the given annotation type, and false if it doesn't.
+	 * Return the parameter annotation of the given type, if available.
+	 * @param annotationType the annotation type to look for
+	 * @return the annotation object, or {@code null} if not found
 	 */
-	public <T extends Annotation> boolean hasParameterAnnotation(Class<T> annotationType) {
+	@SuppressWarnings("unchecked")
+	public <A extends Annotation> A getParameterAnnotation(Class<A> annotationType) {
+		Annotation[] anns = getParameterAnnotations();
+		for (Annotation ann : anns) {
+			if (annotationType.isInstance(ann)) {
+				return (A) ann;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Return whether the parameter is declared with the given annotation type.
+	 * @param annotationType the annotation type to look for
+	 * @see #getParameterAnnotation(Class)
+	 */
+	public <A extends Annotation> boolean hasParameterAnnotation(Class<A> annotationType) {
 		return (getParameterAnnotation(annotationType) != null);
 	}
 

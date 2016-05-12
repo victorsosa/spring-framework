@@ -16,13 +16,7 @@
 
 package org.springframework.web.servlet.resource;
 
-import static org.junit.Assert.*;
-import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.*;
-
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,7 +24,6 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
-
 import javax.servlet.http.HttpServletResponse;
 
 import org.hamcrest.Matchers;
@@ -52,12 +45,15 @@ import org.springframework.web.accept.ContentNegotiationManager;
 import org.springframework.web.accept.ContentNegotiationManagerFactoryBean;
 import org.springframework.web.servlet.HandlerMapping;
 
+import static org.junit.Assert.*;
+
 /**
  * Unit tests for ResourceHttpRequestHandler.
  *
  * @author Keith Donald
  * @author Jeremy Grelle
  * @author Rossen Stoyanchev
+ * @author Brian Clozel
  */
 public class ResourceHttpRequestHandlerTests {
 
@@ -100,6 +96,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("max-age=3600", this.response.getHeader("Cache-Control"));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("test/foo.css"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 		assertEquals("h1 { color:red; }", this.response.getContentAsString());
 	}
 
@@ -115,6 +113,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("max-age=3600", this.response.getHeader("Cache-Control"));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("test/foo.css"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 		assertEquals(0, this.response.getContentAsByteArray().length);
 	}
 
@@ -137,6 +137,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("no-store", this.response.getHeader("Cache-Control"));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("test/foo.css"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -150,6 +152,8 @@ public class ResourceHttpRequestHandlerTests {
 		this.handler.handleRequest(this.request, this.response);
 
 		assertEquals("\"versionString\"", this.response.getHeader("ETag"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -166,6 +170,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertTrue(dateHeaderAsLong("Expires") >= System.currentTimeMillis() - 1000 + (3600 * 1000));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("test/foo.css"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -184,6 +190,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertTrue(dateHeaderAsLong("Expires") <= System.currentTimeMillis());
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(dateHeaderAsLong("Last-Modified") / 1000, resourceLastModified("test/foo.css") / 1000);
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -195,6 +203,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("max-age=3600", this.response.getHeader("Cache-Control"));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("test/foo.html"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -207,6 +217,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("max-age=3600", this.response.getHeader("Cache-Control"));
 		assertTrue(this.response.containsHeader("Last-Modified"));
 		assertEquals(this.response.getHeader("Last-Modified"), resourceLastModifiedDate("testalternatepath/baz.css"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 		assertEquals("h1 { color:red; }", this.response.getContentAsString());
 	}
 
@@ -232,6 +244,27 @@ public class ResourceHttpRequestHandlerTests {
 	public void getResourceWithRegisteredMediaType() throws Exception {
 		ContentNegotiationManagerFactoryBean factory = new ContentNegotiationManagerFactoryBean();
 		factory.addMediaType("css", new MediaType("foo", "bar"));
+		factory.afterPropertiesSet();
+		ContentNegotiationManager manager = factory.getObject();
+
+		List<Resource> paths = Collections.singletonList(new ClassPathResource("test/", getClass()));
+		this.handler = new ResourceHttpRequestHandler();
+		this.handler.setLocations(paths);
+		this.handler.setContentNegotiationManager(manager);
+		this.handler.afterPropertiesSet();
+
+		this.request.setAttribute(HandlerMapping.PATH_WITHIN_HANDLER_MAPPING_ATTRIBUTE, "foo.css");
+		this.handler.handleRequest(this.request, this.response);
+
+		assertEquals("foo/bar", this.response.getContentType());
+		assertEquals("h1 { color:red; }", this.response.getContentAsString());
+	}
+
+	@Test // SPR-13658
+	public void getResourceWithRegisteredMediaTypeDefaultStrategy() throws Exception {
+		ContentNegotiationManagerFactoryBean factory = new ContentNegotiationManagerFactoryBean();
+		factory.setFavorPathExtension(false);
+		factory.setDefaultContentType(new MediaType("foo", "bar"));
 		factory.afterPropertiesSet();
 		ContentNegotiationManager manager = factory.getObject();
 
@@ -437,6 +470,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals(2, this.response.getContentLength());
 		assertEquals("bytes 0-1/10", this.response.getHeader("Content-Range"));
 		assertEquals("So", this.response.getContentAsString());
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -450,6 +485,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals(1, this.response.getContentLength());
 		assertEquals("bytes 9-9/10", this.response.getHeader("Content-Range"));
 		assertEquals(".", this.response.getContentAsString());
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -463,6 +500,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals(1, this.response.getContentLength());
 		assertEquals("bytes 9-9/10", this.response.getHeader("Content-Range"));
 		assertEquals(".", this.response.getContentAsString());
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -476,6 +515,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals(1, this.response.getContentLength());
 		assertEquals("bytes 9-9/10", this.response.getHeader("Content-Range"));
 		assertEquals(".", this.response.getContentAsString());
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -489,6 +530,8 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals(10, this.response.getContentLength());
 		assertEquals("bytes 0-9/10", this.response.getHeader("Content-Range"));
 		assertEquals("Some text.", this.response.getContentAsString());
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -499,6 +542,8 @@ public class ResourceHttpRequestHandlerTests {
 
 		assertEquals(416, this.response.getStatus());
 		assertEquals("bytes */10", this.response.getHeader("Content-Range"));
+		assertEquals("bytes", this.response.getHeader("Accept-Ranges"));
+		assertEquals(1, this.response.getHeaders("Accept-Ranges").size());
 	}
 
 	@Test
@@ -529,47 +574,6 @@ public class ResourceHttpRequestHandlerTests {
 		assertEquals("Content-Type: text/plain", ranges[9]);
 		assertEquals("Content-Range: bytes 8-9/10", ranges[10]);
 		assertEquals("t.", ranges[11]);
-	}
-
-	// SPR-12999
-	@Test @SuppressWarnings("unchecked")
-	public void writeContentNotGettingInputStream() throws Exception {
-		Resource resource = mock(Resource.class);
-		given(resource.getInputStream()).willThrow(FileNotFoundException.class);
-
-		this.handler.writeContent(this.response, resource);
-
-		assertEquals(200, this.response.getStatus());
-		assertEquals(0, this.response.getContentLength());
-	}
-
-	// SPR-12999
-	@Test
-	public void writeContentNotClosingInputStream() throws Exception {
-		Resource resource = mock(Resource.class);
-		InputStream inputStream = mock(InputStream.class);
-		given(resource.getInputStream()).willReturn(inputStream);
-		given(inputStream.read(any())).willReturn(-1);
-		doThrow(new NullPointerException()).when(inputStream).close();
-
-		this.handler.writeContent(this.response, resource);
-
-		assertEquals(200, this.response.getStatus());
-		assertEquals(0, this.response.getContentLength());
-	}
-
-	// SPR-13620
-	@Test @SuppressWarnings("unchecked")
-	public void writeContentInputStreamThrowingNullPointerException() throws Exception {
-		Resource resource = mock(Resource.class);
-		InputStream in = mock(InputStream.class);
-		given(resource.getInputStream()).willReturn(in);
-		given(in.read(any())).willThrow(NullPointerException.class);
-
-		this.handler.writeContent(this.response, resource);
-
-		assertEquals(200, this.response.getStatus());
-		assertEquals(0, this.response.getContentLength());
 	}
 
 	// SPR-14005

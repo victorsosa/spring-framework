@@ -48,6 +48,10 @@ public abstract class CacheOperation implements BasicOperation {
 
 	private final String toString;
 
+
+	/**
+	 * @since 4.3
+	 */
 	protected CacheOperation(Builder b) {
 		this.name = b.name;
 		this.cacheNames = b.cacheNames;
@@ -59,10 +63,10 @@ public abstract class CacheOperation implements BasicOperation {
 		this.toString = b.getOperationDescription().toString();
 	}
 
+
 	public String getName() {
 		return this.name;
 	}
-
 
 	@Override
 	public Set<String> getCacheNames() {
@@ -73,21 +77,17 @@ public abstract class CacheOperation implements BasicOperation {
 		return this.key;
 	}
 
-
 	public String getKeyGenerator() {
 		return this.keyGenerator;
 	}
-
 
 	public String getCacheManager() {
 		return this.cacheManager;
 	}
 
-
 	public String getCacheResolver() {
 		return this.cacheResolver;
 	}
-
 
 	public String getCondition() {
 		return this.condition;
@@ -96,7 +96,6 @@ public abstract class CacheOperation implements BasicOperation {
 
 	/**
 	 * This implementation compares the {@code toString()} results.
-	 *
 	 * @see #toString()
 	 */
 	@Override
@@ -106,7 +105,6 @@ public abstract class CacheOperation implements BasicOperation {
 
 	/**
 	 * This implementation returns {@code toString()}'s hash code.
-	 *
 	 * @see #toString()
 	 */
 	@Override
@@ -118,7 +116,6 @@ public abstract class CacheOperation implements BasicOperation {
 	 * Return an identifying description for this cache operation.
 	 * <p>Returned value is produced by calling {@link Builder#getOperationDescription()}
 	 * during object construction. This method is used in {#hashCode} and {#equals}.
-	 *
 	 * @see Builder#getOperationDescription()
 	 */
 	@Override
@@ -126,6 +123,10 @@ public abstract class CacheOperation implements BasicOperation {
 		return this.toString;
 	}
 
+
+	/**
+	 * @since 4.3
+	 */
 	public abstract static class Builder {
 
 		private String name = "";
